@@ -2,7 +2,7 @@
 
 # Net::FTPServer::PWP::Server - FTP server suitable for PWP services
 
-# $Id: Server.pm,v 1.26.2.2 2002/11/13 19:35:05 lem Exp $
+# $Id: Server.pm,v 1.29 2002/11/16 00:05:04 lem Exp $
 
 =pod
 
@@ -76,7 +76,15 @@ to B<This operation would exceed your quota>.
 
 =item B<pwp quota file>
 
-The name of the quota file to use. Defaults to C<.pwpquota>.
+The name of the quota file to use. Defaults to C<../$user-pwpquota>, which
+places the quota file just above the PWP directory at the home dir of
+each user using a name composed of the user name plus '-pwpquota'.
+
+You can use variables such as C<$hostname>, C<$username>, etc. within
+its specification. Note that the quota file is specified relative to
+the PWP directory of the user, but is not subjected to the jail
+limitations. This allows the quota file to be placed outside the PWP
+directories.
 
 =item B<pwp max quota file age>
 
@@ -126,7 +134,9 @@ must match the one used in your dictionary files.
 =item B<hide mount point>
 
 When true, instructs the FTP server to attempt to hide the actual
-mount point from the client.
+mount point from the client. This forms a sort of jail similar to what
+C<chroot()> imposes, but without the need to replicate system files to
+the C<chroot()>-ed environment.
 
 =back
 
@@ -145,7 +155,7 @@ use vars qw($VERSION $t0);
 # $t0 is used as a timestamp for the RADIUS response if debug is
 # enabled
 
-$VERSION = '1.10';
+$VERSION = '1.20';
 
 use IO::Select;
 use Net::FTPServer;
@@ -153,8 +163,9 @@ use NetAddr::IP 3.00;
 use IO::Socket::INET;
 use Net::Radius::Packet;
 use Net::Radius::Dictionary;
-use Net::FTPServer::PWP::FileHandle;
 use Net::FTPServer::PWP::DirHandle;
+use Net::FTPServer::PWP::FileHandle;
+use Net::FTPServer::Full::DirHandle;
 use Time::HiRes qw(gettimeofday tv_interval);;
 
 use vars qw(@ISA);
@@ -218,34 +229,11 @@ sub authentication_hook {
 	if ($self->config('debug'));
 
 				# Since everything went well, add our very
-				# own DELE and SITE QUOTA handlers
+				# own DELE and SITE QUOTA handlers, which
+				# handle the quotas
 
-    $self->{command_table}{SITE_QUOTA}		= \&_SITE_QUOTA_command;
-    $self->{command_table}{SITE_CHECKSUM}	= \&_SITE_CHECKSUM_command;
-
+    $self->{site_command_table}{QUOTA}	= \&_SITE_QUOTA_command;
     $self->{command_table}{DELE}	= \&_DELE_command;
-    $self->{command_table}{PWD}		= \&_PWD_command;
-    $self->{command_table}{CDUP} 	= \&_CDUP_command;
-    $self->{command_table}{RETR} 	= \&_RETR_command;
-    $self->{command_table}{STOR} 	= \&_STOR_command;
-    $self->{command_table}{STOU} 	= \&_STOU_command;
-    $self->{command_table}{APPE} 	= \&_APPE_command;
-    $self->{command_table}{ALLO} 	= \&_ALLO_command;
-    $self->{command_table}{RNFR} 	= \&_RNFR_command;
-    $self->{command_table}{RNTO} 	= \&_RNTO_command;
-    $self->{command_table}{RMD} 	= \&_RMD_command;
-    $self->{command_table}{MKD} 	= \&_MKD_command;
-    $self->{command_table}{LIST} 	= \&_LIST_command;
-    $self->{command_table}{NLST} 	= \&_NLST_command;
-    $self->{command_table}{SIZE} 	= \&_SIZE_command;
-    $self->{command_table}{STAT} 	= \&_STAT_command;
-    $self->{command_table}{XMKD} 	= \&_XMKD_command;
-    $self->{command_table}{XRMD} 	= \&_XRMD_command;
-    $self->{command_table}{XCUP} 	= \&_XCUP_command;
-    $self->{command_table}{XCWD} 	= \&_XCWD_command;
-    $self->{command_table}{MDTM} 	= \&_MDTM_command;
-    $self->{command_table}{MLST} 	= \&_MLST_command;
-    $self->{command_table}{MLSD} 	= \&_MLSD_command;
     
     return 0;
 }
@@ -452,7 +440,12 @@ sub user_login_hook {
     $self->{pwp_max_qfile_entries} = $self->config('pwp max quota file lines')
 	|| 10;
 
-    $self->{pwp_qfile} = $self->config('pwp quota file') || '.pwpquota';
+				# Apply variable substitution to
+				# the qfile spec so that they can be
+				# placed anywhere
+
+    $self->{pwp_qfile} = $self->config('pwp quota file') || '../pwpquota';
+    $self->{pwp_qfile} =~ s!\$(\w+)!$self->{$1}!g;
 
     my $uid = $self->config('default pwp userid');
     my $gid = $self->config('default pwp groupid');
@@ -479,9 +472,9 @@ corresponding to the root directory.
 				# also calc the usage if required
 sub root_directory_hook {
     my $self = shift;
+
     $self->{pwp_root} = 
-	new Net::FTPServer::PWP::DirHandle($self, 
-					   $self->{pwp_root_dir});
+	new Net::FTPServer::PWP::DirHandle($self, '/');
 
     $self->log('debug',  "root_directory_hook: root is $self->{pwp_root_dir}")
 	if $self->config('debug');
@@ -499,16 +492,93 @@ sub _calc_space {
 
     $self->{pwp_space} = 0;
 
-    $self->visit($self->{pwp_root}, 
-		 { f => sub { $self->{pwp_space} += ($_->status)[5] 
-			      unless $_->filename eq $self->{pwp_qfile}}});
+    unless ($self->{pwp_qhandle}) {
+	$self->{pwp_qhandle} = $self->{pwp_root};
 
-    my $fh = $self->{pwp_root}->open($self->{pwp_qfile}, "w");
+				# The quota file might be wanted outside
+				# the current home directory. Therefore,
+				# we need to be free from the hurdles
+				# of 'hide mount point'...
+
+	$self->{pwp_qhandle} = Net::FTPServer::Full::DirHandle 
+	    -> new($self, $self->{pwp_qhandle}->{_pathname});
+
+	my @parts = split m!/!, $self->{pwp_qfile};
+
+	while (my $c = shift @parts) {
+	    next if $c eq '' or $c eq '.';
+	    if ($c eq "..") {
+		$self->{pwp_qhandle} = $self->{pwp_qhandle}->parent;
+	    }
+	    else {
+		my $h = $self->{pwp_qhandle}->get($c);
+
+		if (!$h and !@parts) {
+		    $h = $self->{pwp_qhandle}->open($c, "w");
+		    unless ($h) {
+			warn "Cannot create quota file ",
+			$self->{pwp_qhandle}->pathname . "/$c: $!\n";
+			delete $self->{pwp_qhandle};
+			return undef;
+		    }
+		}
+
+		$self->{pwp_qhandle} = $self->{pwp_qhandle}->get($c);
+
+		unless 
+		    ($self->{pwp_qhandle} and 
+		     $self->{pwp_qhandle}->isa("Net::FTPServer::Handle"))
+		{
+		    warn "Invalid quota file: $self->{pwp_qfile} ($!)\n";
+		    delete $self->{pwp_qhandle};
+		    return undef;
+		}
+	    }
+	}
+
+	unless 
+	    ($self->{pwp_qhandle} 
+	     and $self->{pwp_qhandle}->isa("Net::FTPServer::FileHandle")) 
+	{
+	    warn "$self->{pwp_qhandle} Quota file seems invalid: $self->{pwp_qfile}\n";
+	    delete $self->{pwp_qhandle};
+	    return undef;
+	}
+    }
+
+    my $fh = $self->{pwp_qhandle}->open("w");
 
     unless ($fh) {
 	die "Failed to create ", $self->{pwp_qfile}, ": $!\n";
     }
 
+    $self->visit($self->{pwp_root}, { 
+	'f' => sub 
+	{ 
+#	    warn "quota f: ", $_->pathname, " adds ", ($_->status)[5], "\n";
+	    $self->{pwp_space} += ($_->status)[5] 
+		unless $_->pathname 
+		    eq $self->{pwp_qhandle}->pathname;
+	    return 1;
+	},
+	'd' => sub 
+	{
+#	    warn "quota d: ", $_->pathname, " adds ", ($_->status)[5], "\n";
+	    $self->{pwp_space} += ($_->status)[5] 
+		unless $_->pathname 
+		    eq $self->{pwp_qhandle}->pathname;
+	    return 1;
+	},
+	'l' => sub 
+	{
+#	    warn "quota l: ", $_->pathname, " adds ", ($_->status)[5], "\n";
+	    $self->{pwp_space} += ($_->status)[5] 
+		unless $_->pathname 
+		    eq $self->{pwp_qhandle}->pathname;
+	    return 1;
+	}
+    });
+    
     print $fh $self->{pwp_space}, "\n";
 
 #    warn "Quota file rebuilt. $self->{pwp_space} bytes seen\n";
@@ -529,7 +599,10 @@ sub _add_space {
 
 #    warn "_add_space $size\n";
 
-    my $fh = $self->{pwp_root}->get($self->{pwp_qfile});
+
+    $self->_calc_space unless $self->{pwp_qhandle};
+
+    my $fh = $self->{pwp_qhandle};
 
     if ($fh) {
 
@@ -581,7 +654,7 @@ sub _add_space {
 				# Add the space to the quota file only
 				# if non-zero.
 
-	$fh = $self->{pwp_root}->open($self->{pwp_qfile}, "a");
+	$fh = $self->{pwp_qhandle}->open("a");
 
 	die "Failed to append quota file ", $self->{pwp_qfile}, ": $!\n"
 	    unless $fh;
@@ -590,7 +663,7 @@ sub _add_space {
 
 	$fh->close;
 	$self->{pwp_quota_stamp} 
-	= ($self->{pwp_root}->get($self->{pwp_qfile})->status)[6];
+	= ($self->{pwp_qhandle}->status)[6];
 
     }
 
@@ -608,8 +681,8 @@ recalculated.
 
 sub pre_command_hook {
     my $self = shift;
-    return unless $self->{pwp_quota} > 0;
-    $self->_calc_space if $self->{pwp_space} < 0;
+    return unless defined $self->{pwp_quota} and $self->{pwp_quota} > 0;
+    $self->_calc_space if $self->{pwp_space} <= 0;
 }
 
 =pod
@@ -654,7 +727,6 @@ sub transfer_hook {
 	    return $self->config('pwp quota exceeded message') 
 		|| "This operation would exceed your quota";
 	}
-
 	$self->_add_space($len);
     }
 
@@ -705,7 +777,7 @@ delete the same file at the same time, probably both will think they
 did and will attempt to reflect this in the quota file. There's a
 chance for both of the updates to make it to the quota file, thus
 over-reducing the user's space allocation. This will correct
-automatically afterr either a few more operations or some time.
+automatically after either a few more operations or some time.
 
 =cut
 
@@ -713,8 +785,6 @@ sub _DELE_command {
     my $self = shift;
     my $cmd = shift;
     my $rest = shift;
-
-    substr($rest, 0, 1) = $self->{pwp_root_dir} if substr($rest, 0, 1) eq '/';
 
     my ($o_fileh) = ($self->_get ($rest))[1];
 
@@ -725,7 +795,7 @@ sub _DELE_command {
 	($mode, $size) = ($o_fileh->status)[0, 5];
     }
     
-  Net::FTPServer::_DELE_command($self, $cmd, $rest);
+    $self->SUPER::_DELE_command($cmd, $rest);
 
     my ($n_fileh) = ($self->_get ($rest))[1];
 
@@ -735,349 +805,6 @@ sub _DELE_command {
     }
 
     return;
-}
-
-=pod
-
-=item _PWD_command();
-
-Handle the PWD command, hidding the actual root directory from the
-client if the configuration file specifies a true value for "hide
-mount point".
-
-=cut
-
-sub _PWD_command {
-    my $self = shift;
-    my $cmd = shift;
-    my $rest = shift;
-
-    my $pathname = $self->{cwd}->pathname;
-    $pathname =~ s,/+$,, unless $pathname eq "/";
-    $pathname =~ tr,/,/,s;
-
-
-    if ($self->config('hide mount point')) {
-	my $root = $self->{pwp_root_dir};
-	$root =~ s,/+$,, unless $root eq "/";
-	$root =~ tr,/,/,s;
-
-	if (index($pathname, $root) == 0) {
-	    substr($pathname, 0, length($root)) = '/';
-	    $pathname =~ s!^/+!/!;
-	}
-    }
-
-    $self->reply (257, "\"$pathname\"");
-}
-
-=pod
-
-=item C<-E<gt>_CDUP_command>
-
-Wrapper around C<_CDUP_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _CDUP_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_CDUP_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_RETR_command>
-
-Wrapper around C<_RETR_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _RETR_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_RETR_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_STOR_command>
-
-Wrapper around C<_STOR_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _STOR_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_STOR_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_STOU_command>
-
-Wrapper around C<_STOU_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _STOU_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_STOU_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_APPE_command>
-
-Wrapper around C<_APPE_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _APPE_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_APPE_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_ALLO_command>
-
-Wrapper around C<_ALLO_command> which insures that the mount point is
-hidden properly. As this code was written, the command was not
-implemented, but you never know...
-
-=cut
-
-sub _ALLO_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_ALLO_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_RNFR_command>
-
-Wrapper around C<_RNFR_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _RNFR_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_RNFR_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_RNTO_command>
-
-Wrapper around C<_RNTO_command> which insures that the mount point is hidden properly.
-
-=cut
-
-sub _RNTO_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_RNTO_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_RMD_command>
-
-Wrapper around C<_RMD_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _RMD_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_RMD_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_MKD_command>
-
-Wrapper around C<_MKD_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _MKD_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_MKD_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_LIST_command>
-
-Wrapper around C<_LIST_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _LIST_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_LIST_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_NLST_command>
-
-Wrapper around C<_NLST_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _NLST_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_NLST_command(@_);
-
-}
-
-=pod
-
-=item C<-E<gt>_SITE_CHECKSUM_command>
-
-Wrapper around C<_SITE_CHECKSUM_command> which insures that the mount
-point is hidden properly.
-
-=cut
-
-sub _SITE_CHECKSUM_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_SITE_CHECKSUM_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_SIZE_command>
-
-Wrapper around C<_SIZE_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _SIZE_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_SIZE_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_STAT_command>
-
-Wrapper around C<_STAT_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _STAT_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_STAT_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_XMKD_command>
-
-Wrapper around C<_XMKD_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _XMKD_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_XMKD_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_XRMD_command>
-
-Wrapper around C<_XRMD_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _XRMD_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_XRMD_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_XCUP_command>
-
-Wrapper around C<_XCUP_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _XCUP_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_XCUP_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_XCWD_command>
-
-Wrapper around C<_XCWD_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _XCWD_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_XCWD_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_MDTM_command>
-
-Wrapper around C<_MDTM_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _MDTM_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_MDTM_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_MLST_command>
-
-Wrapper around C<_MLST_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _MLST_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_MLST_command(@_);
-}
-
-=pod
-
-=item C<-E<gt>_MLSD_command>
-
-Wrapper around C<_MLSD_command> which insures that the mount point is
-hidden properly.
-
-=cut
-
-sub _MLSD_command {
-    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
-  Net::FTPServer::_MLSD_command(@_);
 }
 
 1;
@@ -1092,7 +819,7 @@ __END__
 
 =head1 HISTORY
 
-$Id: Server.pm,v 1.26.2.2 2002/11/13 19:35:05 lem Exp $
+$Id: Server.pm,v 1.29 2002/11/16 00:05:04 lem Exp $
 
 =over 8
 
@@ -1110,6 +837,17 @@ Original version; created by h2xs 1.21 with options
 
 PWD will return the path minus the current root. This allows for the
 hidding of the home directory.
+
+=item 1.20
+
+As per Rob Brown suggestion, the quota file will no longer be within
+the home directory. Any arbitrary pathname can be specified in the
+config file. Include the directory size in the quota calculation to
+avoid abuses.
+
+The quota file specification has variable interpolation performed.
+
+SITE QUOTA was broken in 1.10. Fixed.
 
 =back
 

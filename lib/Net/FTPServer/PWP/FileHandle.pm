@@ -1,6 +1,6 @@
 package Net::FTPServer::PWP::FileHandle;
 
-# $Id: FileHandle.pm,v 1.4.4.1 2002/11/13 19:29:11 lem Exp $
+# $Id: FileHandle.pm,v 1.5 2002/11/15 23:55:43 lem Exp $
 
 use 5.00500;
 use strict;
@@ -8,18 +8,14 @@ use strict;
 require Exporter;
 use vars qw($VERSION @ISA);
 
+use Net::FTPServer::PWP::Handle;
 use Net::FTPServer::Full::FileHandle;
 
-@ISA = qw(Net::FTPServer::Full::FileHandle);
+@ISA = qw(Net::FTPServer::PWP::Handle Net::FTPServer::Full::FileHandle);
 
 $VERSION = '1.00';
 
-
-# Preloaded methods go here.
-
-1;
-__END__
-# Below is stub documentation for your module. You better edit it!
+=pod
 
 =head1 NAME
 
@@ -32,10 +28,7 @@ Net::FTPServer::PWP::FileHandle - Specialized ::FileHandle for Net::FTPServer::P
 =head1 DESCRIPTION
 
 This module complements C<Net::FTPServer::PWP> by encapsulating
-directory-handling methods.
-
-Currently this is just a placeholder that directly maps the calls to
-C<Net::FTPServer::Full::FileHandle>.
+eventual file-handling methods.
 
 =over
 
@@ -45,10 +38,21 @@ C<Net::FTPServer::Full::FileHandle>.
 
 None by default.
 
+=head1 METHODS
+
+None
+
+=cut
+
+1;
+
+__END__
+
+=pod
 
 =head1 HISTORY
 
-$Id: FileHandle.pm,v 1.4.4.1 2002/11/13 19:29:11 lem Exp $
+$Id: FileHandle.pm,v 1.5 2002/11/15 23:55:43 lem Exp $
 
 =over 8
 

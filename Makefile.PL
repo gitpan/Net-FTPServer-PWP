@@ -2,7 +2,7 @@ use ExtUtils::MakeMaker;
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 
-# $Id: Makefile.PL,v 1.9.4.1 2002/11/13 19:29:11 lem Exp $
+# $Id: Makefile.PL,v 1.9 2002/10/27 04:53:51 lem Exp $
 
 WriteMakefile(
     'NAME'		=> 'Net::FTPServer::PWP',

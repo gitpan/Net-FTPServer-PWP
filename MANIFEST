@@ -8,6 +8,7 @@ bin/pwp-ftpd.pl
 ftpd-changes.conf
 lib/Net/FTPServer/PWP.pm
 lib/Net/FTPServer/PWP/Server.pm
+lib/Net/FTPServer/PWP/Handle.pm
 lib/Net/FTPServer/PWP/DirHandle.pm
 lib/Net/FTPServer/PWP/FileHandle.pm
 patches/README

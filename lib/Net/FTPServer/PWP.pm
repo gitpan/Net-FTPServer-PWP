@@ -1,7 +1,7 @@
 
 use vars qw($VERSION);
 
-$VERSION = '1.10';
+$VERSION = '1.20';
 
 1;
 
@@ -52,7 +52,7 @@ Configurable root directory, supplied through the RADIUS server
 
 =back
 
-=head3 RADIUS Authentication
+=head2 RADIUS Authentication
 
 We chose to implement a direct RADIUS authentication rather than using
 a service such as PAM, because we wanted to get back from the RADIUS
@@ -66,7 +66,7 @@ dictionaries involved and the config file, and nobody should complain.
 Please take a look at the pwp-dictionary file that was distributed
 along this module, in order to see the actual attributes used.
 
-=head3 Directory quotas
+=head2 Directory quotas
 
 This is based on Maildir++. It consist on maintaining a file
 (C<.pwpquota> by default) with the size of each file in the user's
@@ -113,6 +113,10 @@ classes or modules, are the ones marked with an asterisk.
 
   Net::FTPServer
   |
+  + Net::FTPServer::Handle
+  | |
+  | +-Net::FTPServer::PWP::Handle (*)
+  |
   +-Net::FTPServer::PWP::Server (*)
   |
   +-Net::FTPServer::Full
@@ -127,6 +131,15 @@ classes or modules, are the ones marked with an asterisk.
     |
     +-Net::FTPServer::PWP::FileHandle (*)
 
+Note that C<Net::FTPServer::PWP::FileHandle> and
+C<Net::FTPServer::PWP::DirHandle> also inherit from
+C<Net::FTPServer::PWP::Handle>. C<Net::FTPServer::PWP::Handle>
+inherits from C<Net::FTPServer::Handle>.
+
+This double inheritance is used to implement a jail, similar to the
+use of C<chroot()>, which prevents users from interacting with files
+or directories outside their PWP space.
+
 =head2 CONFIGURATION
 
 A few config file entries have been added. Please see
@@ -139,7 +152,7 @@ entries.
 
 =head1 HISTORY
 
-$Id: PWP.pm,v 1.5.2.2 2002/11/13 19:35:05 lem Exp $
+$Id: PWP.pm,v 1.10 2002/11/16 00:05:04 lem Exp $
 
 =over 8
 
@@ -157,6 +170,13 @@ Original version; created by h2xs 1.21 with options
 
 We can now hide the mount point from the client if instructed to do so
 in the configuration file.
+
+=item 1.20
+
+Varios quota-related changes. See L<Net::FTPServer::PWP::Server> for
+specific info.
+
+Fixed typo in the docs that was causing POD errors.
 
 =back
 
