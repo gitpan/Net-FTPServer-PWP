@@ -1,0 +1,46 @@
+Net/FTPServer/PWP version 1.00
+===================================
+
+A derived class from Net::FTPServer that adds some required features
+to allow quotas and RADIUS authentication.
+
+This is useful for what we call PWP (Personal Web Pages). This is a
+particular scenario where possibly millions of users share a pool of
+"stateless" FTP servers that access filesystems where their personal
+web pages are stored. In this scenario, it is impractical to assign a
+unique user-id to each user for permission control. Also, the
+authentication depends on an external AAA server, which in our case is
+a RADIUS server.
+
+This class provides an FTP server adapted to this environment.
+
+INSTALLATION
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+DEPENDENCIES
+
+This module requires these other modules and libraries:
+
+   Net::FTPServer
+   NetAddr::IP 3.00 or newer
+   Net::Radius 1.32 or newer
+
+Additionally, you will need either a RADIUS server that can cope with
+vendor-specific attributes (VSAs) or the willingness to make a few
+changes to the enclosed code.
+
+COPYRIGHT AND LICENSE
+
+This code is released under the same terms as Perl itself
+
+Copyright (C) 2002 Luis E. Munoz <luismunoz@cpan.org>
+                   Manuel Picone <mpicone@cantv.net>
+
+$Id: README,v 1.9 2002/10/27 04:53:51 lem Exp $
+
