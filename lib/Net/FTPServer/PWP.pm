@@ -1,7 +1,7 @@
 
 use vars qw($VERSION);
 
-$VERSION = '1.00';
+$VERSION = '1.10';
 
 1;
 
@@ -139,7 +139,7 @@ entries.
 
 =head1 HISTORY
 
-$Id: PWP.pm,v 1.4 2002/11/01 20:06:12 lem Exp $
+$Id: PWP.pm,v 1.5.2.2 2002/11/13 19:35:05 lem Exp $
 
 =over 8
 
@@ -152,6 +152,11 @@ Original version; created by h2xs 1.21 with options
 	-v1.00
 	-b
 	5.5.0
+
+=item 1.10
+
+We can now hide the mount point from the client if instructed to do so
+in the configuration file.
 
 =back
 

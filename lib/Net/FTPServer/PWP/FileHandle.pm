@@ -1,6 +1,6 @@
 package Net::FTPServer::PWP::FileHandle;
 
-# $Id: FileHandle.pm,v 1.4 2002/10/17 19:41:07 lem Exp $
+# $Id: FileHandle.pm,v 1.4.4.1 2002/11/13 19:29:11 lem Exp $
 
 use 5.00500;
 use strict;
@@ -48,7 +48,7 @@ None by default.
 
 =head1 HISTORY
 
-$Id: FileHandle.pm,v 1.4 2002/10/17 19:41:07 lem Exp $
+$Id: FileHandle.pm,v 1.4.4.1 2002/11/13 19:29:11 lem Exp $
 
 =over 8
 

@@ -1,7 +1,7 @@
 # Before `make install' is performed this script should be runnable with
 # `make test'. After `make install' it should work as `perl test.pl'
 
-# $Id: 00-load.t,v 1.2 2002/10/17 03:17:33 lem Exp $
+# $Id: 00-load.t,v 1.2.4.1 2002/11/13 19:29:12 lem Exp $
 
 #########################
 

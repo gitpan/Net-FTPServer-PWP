@@ -2,7 +2,7 @@
 
 # Net::FTPServer::PWP::Server - FTP server suitable for PWP services
 
-# $Id: Server.pm,v 1.25 2002/10/30 20:00:52 lem Exp $
+# $Id: Server.pm,v 1.26.2.2 2002/11/13 19:35:05 lem Exp $
 
 =pod
 
@@ -123,6 +123,11 @@ The vendor-id used in the Vendor-Specific Attributes sent and received
 from the RADIUS server. The dafault is 582. The value specified here
 must match the one used in your dictionary files.
 
+=item B<hide mount point>
+
+When true, instructs the FTP server to attempt to hide the actual
+mount point from the client.
+
 =back
 
 =head1 METHODS
@@ -140,7 +145,7 @@ use vars qw($VERSION $t0);
 # $t0 is used as a timestamp for the RADIUS response if debug is
 # enabled
 
-$VERSION = '1.00';
+$VERSION = '1.10';
 
 use IO::Select;
 use Net::FTPServer;
@@ -215,9 +220,33 @@ sub authentication_hook {
 				# Since everything went well, add our very
 				# own DELE and SITE QUOTA handlers
 
-    $self->{command_table}{DELE} = \&_DELE_command;
-    $self->{site_command_table}{QUOTA} = \&_SITE_QUOTA_command;
+    $self->{command_table}{SITE_QUOTA}		= \&_SITE_QUOTA_command;
+    $self->{command_table}{SITE_CHECKSUM}	= \&_SITE_CHECKSUM_command;
 
+    $self->{command_table}{DELE}	= \&_DELE_command;
+    $self->{command_table}{PWD}		= \&_PWD_command;
+    $self->{command_table}{CDUP} 	= \&_CDUP_command;
+    $self->{command_table}{RETR} 	= \&_RETR_command;
+    $self->{command_table}{STOR} 	= \&_STOR_command;
+    $self->{command_table}{STOU} 	= \&_STOU_command;
+    $self->{command_table}{APPE} 	= \&_APPE_command;
+    $self->{command_table}{ALLO} 	= \&_ALLO_command;
+    $self->{command_table}{RNFR} 	= \&_RNFR_command;
+    $self->{command_table}{RNTO} 	= \&_RNTO_command;
+    $self->{command_table}{RMD} 	= \&_RMD_command;
+    $self->{command_table}{MKD} 	= \&_MKD_command;
+    $self->{command_table}{LIST} 	= \&_LIST_command;
+    $self->{command_table}{NLST} 	= \&_NLST_command;
+    $self->{command_table}{SIZE} 	= \&_SIZE_command;
+    $self->{command_table}{STAT} 	= \&_STAT_command;
+    $self->{command_table}{XMKD} 	= \&_XMKD_command;
+    $self->{command_table}{XRMD} 	= \&_XRMD_command;
+    $self->{command_table}{XCUP} 	= \&_XCUP_command;
+    $self->{command_table}{XCWD} 	= \&_XCWD_command;
+    $self->{command_table}{MDTM} 	= \&_MDTM_command;
+    $self->{command_table}{MLST} 	= \&_MLST_command;
+    $self->{command_table}{MLSD} 	= \&_MLSD_command;
+    
     return 0;
 }
 
@@ -685,6 +714,8 @@ sub _DELE_command {
     my $cmd = shift;
     my $rest = shift;
 
+    substr($rest, 0, 1) = $self->{pwp_root_dir} if substr($rest, 0, 1) eq '/';
+
     my ($o_fileh) = ($self->_get ($rest))[1];
 
     my $size = 0;
@@ -706,6 +737,349 @@ sub _DELE_command {
     return;
 }
 
+=pod
+
+=item _PWD_command();
+
+Handle the PWD command, hidding the actual root directory from the
+client if the configuration file specifies a true value for "hide
+mount point".
+
+=cut
+
+sub _PWD_command {
+    my $self = shift;
+    my $cmd = shift;
+    my $rest = shift;
+
+    my $pathname = $self->{cwd}->pathname;
+    $pathname =~ s,/+$,, unless $pathname eq "/";
+    $pathname =~ tr,/,/,s;
+
+
+    if ($self->config('hide mount point')) {
+	my $root = $self->{pwp_root_dir};
+	$root =~ s,/+$,, unless $root eq "/";
+	$root =~ tr,/,/,s;
+
+	if (index($pathname, $root) == 0) {
+	    substr($pathname, 0, length($root)) = '/';
+	    $pathname =~ s!^/+!/!;
+	}
+    }
+
+    $self->reply (257, "\"$pathname\"");
+}
+
+=pod
+
+=item C<-E<gt>_CDUP_command>
+
+Wrapper around C<_CDUP_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _CDUP_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_CDUP_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_RETR_command>
+
+Wrapper around C<_RETR_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _RETR_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_RETR_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_STOR_command>
+
+Wrapper around C<_STOR_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _STOR_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_STOR_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_STOU_command>
+
+Wrapper around C<_STOU_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _STOU_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_STOU_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_APPE_command>
+
+Wrapper around C<_APPE_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _APPE_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_APPE_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_ALLO_command>
+
+Wrapper around C<_ALLO_command> which insures that the mount point is
+hidden properly. As this code was written, the command was not
+implemented, but you never know...
+
+=cut
+
+sub _ALLO_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_ALLO_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_RNFR_command>
+
+Wrapper around C<_RNFR_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _RNFR_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_RNFR_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_RNTO_command>
+
+Wrapper around C<_RNTO_command> which insures that the mount point is hidden properly.
+
+=cut
+
+sub _RNTO_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_RNTO_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_RMD_command>
+
+Wrapper around C<_RMD_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _RMD_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_RMD_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_MKD_command>
+
+Wrapper around C<_MKD_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _MKD_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_MKD_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_LIST_command>
+
+Wrapper around C<_LIST_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _LIST_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_LIST_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_NLST_command>
+
+Wrapper around C<_NLST_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _NLST_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_NLST_command(@_);
+
+}
+
+=pod
+
+=item C<-E<gt>_SITE_CHECKSUM_command>
+
+Wrapper around C<_SITE_CHECKSUM_command> which insures that the mount
+point is hidden properly.
+
+=cut
+
+sub _SITE_CHECKSUM_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_SITE_CHECKSUM_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_SIZE_command>
+
+Wrapper around C<_SIZE_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _SIZE_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_SIZE_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_STAT_command>
+
+Wrapper around C<_STAT_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _STAT_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_STAT_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_XMKD_command>
+
+Wrapper around C<_XMKD_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _XMKD_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_XMKD_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_XRMD_command>
+
+Wrapper around C<_XRMD_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _XRMD_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_XRMD_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_XCUP_command>
+
+Wrapper around C<_XCUP_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _XCUP_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_XCUP_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_XCWD_command>
+
+Wrapper around C<_XCWD_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _XCWD_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_XCWD_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_MDTM_command>
+
+Wrapper around C<_MDTM_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _MDTM_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_MDTM_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_MLST_command>
+
+Wrapper around C<_MLST_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _MLST_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_MLST_command(@_);
+}
+
+=pod
+
+=item C<-E<gt>_MLSD_command>
+
+Wrapper around C<_MLSD_command> which insures that the mount point is
+hidden properly.
+
+=cut
+
+sub _MLSD_command {
+    substr($_[2], 0, 1) = $_[0]->{pwp_root_dir} if substr($_[2], 0, 1) eq '/';
+  Net::FTPServer::_MLSD_command(@_);
+}
+
 1;
 
 __END__
@@ -718,7 +1092,7 @@ __END__
 
 =head1 HISTORY
 
-$Id: Server.pm,v 1.25 2002/10/30 20:00:52 lem Exp $
+$Id: Server.pm,v 1.26.2.2 2002/11/13 19:35:05 lem Exp $
 
 =over 8
 
@@ -731,6 +1105,11 @@ Original version; created by h2xs 1.21 with options
 	-v1.00
 	-b
 	5.5.0
+
+=item 1.10
+
+PWD will return the path minus the current root. This allows for the
+hidding of the home directory.
 
 =back
 
