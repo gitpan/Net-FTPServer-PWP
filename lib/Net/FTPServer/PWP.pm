@@ -1,7 +1,7 @@
 
 use vars qw($VERSION);
 
-$VERSION = '1.20';
+$VERSION = '1.21';
 
 1;
 
@@ -152,7 +152,7 @@ entries.
 
 =head1 HISTORY
 
-$Id: PWP.pm,v 1.10 2002/11/16 00:05:04 lem Exp $
+$Id: PWP.pm,v 1.11 2003/04/01 15:50:41 lem Exp $
 
 =over 8
 

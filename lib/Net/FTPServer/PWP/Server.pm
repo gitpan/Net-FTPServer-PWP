@@ -2,7 +2,7 @@
 
 # Net::FTPServer::PWP::Server - FTP server suitable for PWP services
 
-# $Id: Server.pm,v 1.29 2002/11/16 00:05:04 lem Exp $
+# $Id: Server.pm,v 1.30 2003/04/01 15:50:42 lem Exp $
 
 =pod
 
@@ -155,7 +155,7 @@ use vars qw($VERSION $t0);
 # $t0 is used as a timestamp for the RADIUS response if debug is
 # enabled
 
-$VERSION = '1.20';
+$VERSION = '1.21';
 
 use IO::Select;
 use Net::FTPServer;
@@ -633,6 +633,7 @@ sub _add_space {
 	    my $f = $fh->open("r");
 	    while (my $bytes = <$f>) {
 		chomp $bytes;
+		next unless $bytes;
 		$self->{pwp_space} += $bytes;
 		if ($self->{pwp_max_qfile_entries} > 0
 		    and ++$lines > $self->{pwp_max_qfile_entries})
@@ -819,7 +820,7 @@ __END__
 
 =head1 HISTORY
 
-$Id: Server.pm,v 1.29 2002/11/16 00:05:04 lem Exp $
+$Id: Server.pm,v 1.30 2003/04/01 15:50:42 lem Exp $
 
 =over 8
 
@@ -848,6 +849,14 @@ avoid abuses.
 The quota file specification has variable interpolation performed.
 
 SITE QUOTA was broken in 1.10. Fixed.
+
+=item 1.21
+
+Added code to avoid this error
+
+    Argument "" isn't numeric in addition (+) at
+    /usr/lib/perl5/site_perl/5.6.1/Net/FTPServer/PWP
+    /Server.pm line 636, <GEN28979> line 2.
 
 =back
 

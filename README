@@ -1,3 +1,6 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
 Net/FTPServer/PWP version 1.00
 ===================================
 
@@ -59,5 +62,16 @@ This code is released under the same terms as Perl itself
 Copyright (C) 2002 Luis E. Munoz <luismunoz@cpan.org>
                    Manuel Picone <mpicone@cantv.net>
 
-$Id: README,v 1.10 2002/11/13 19:18:26 lem Exp $
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.0.6 (Darwin)
+Comment: For info see http://www.gnupg.org
+
+iD8DBQE97UOxQyDWGRI/hhARAnQhAJ43maxIM9A+K1fD4UaTrE+oqTC06gCgn4pu
+wZ1v9IjICgriVFppYQbv1Ng=
+=HnsK
+-----END PGP SIGNATURE-----
+
+$Id: README,v 1.11 2002/12/03 23:53:24 lem Exp $
+
 
